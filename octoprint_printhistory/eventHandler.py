@@ -16,22 +16,14 @@ def eventHandler(self, event, payload):
     supported_event = None
 
     # support for print done & cancelled events
-    if event == Events.PRINT_DONE:
-        supported_event = event
-
-    elif event == Events.PRINT_CANCELLED:
-        supported_event = event
-
-    elif event == Events.PRINT_FAILED:
-        supported_event = event
-
-    elif event == Events.METADATA_STATISTICS_UPDATED:
+    if event in [Events.PRINT_DONE, Events.PRINT_FAILED, Events.METADATA_STATISTICS_UPDATED]:
         supported_event = event
 
     # unsupported event
     if supported_event is None:
         return
 
+    self._logger.info("EVENT TRIGGER: %s" % event)
     if supported_event is not Events.METADATA_STATISTICS_UPDATED:
 
         fileData = dict()
@@ -57,34 +49,35 @@ def eventHandler(self, event, payload):
                 "fileName": fileName,
                 "note": "",
                 "parameters": json.dumps(parameters),
-                "user": ""
+                "user": "",
+                "filamentVolume": 0,
+                "filamentLength": 0
             }
 
-            if payload["print_user"] is not None:
-                currentFile["user"] = payload["print_user"].get_id()
+            if payload["owner"] is not None:
+                currentFile["user"] = payload["owner"]
 
             # analysis - looking for info about filament usage
+
+            #TEMP: log the data
+            self._logger.info(fileData)
+            
             if "analysis" in fileData:
                 if "filament" in fileData["analysis"]:
-                    for (i, tool) in fileData["analysis"]["filament"]["tools"]:
-                        filamentVolume = tool["volume"]
-                        filamentLength = tool['length']
 
-                        currentFile["filamentVolume"][i] = filamentVolume if filamentVolume is not None else 0
-                        currentFile["filamentLength"][i] = filamentLength if filamentLength is not None else 0
-
+                    # this never gets to database
                     estimatedPrintTime = fileData["analysis"]["estimatedPrintTime"] if "estimatedPrintTime" in fileData["analysis"] else 0
 
-                    # Temporarily disabled
-                    # if "tool0" in fileData["analysis"]["filament"] and "tool1" in fileData["analysis"]["filament"]:
-                    #     currentFile["note"] = "Dual extrusion"
+                    # for Python3 .iteritems() > .items()
+                    for (i, tool) in fileData["analysis"]["filament"].iteritems():
+                        filamentVolume = tool["volume"]
+                        filamentLength = tool["length"]
 
-            # make sure we have zeroes for these values if not set above
-            if not currentFile.get("filamentVolume"):
-                currentFile["filamentVolume"] = 0
+                        currentFile["filamentVolume"] += filamentVolume if filamentVolume is not None else 0
+                        currentFile["filamentLength"] += filamentLength if filamentLength is not None else 0
 
-            if not currentFile.get("filamentLength"):
-                currentFile["filamentLength"] = 0
+                        if len(fileData["analysis"]["filament"]) > 1:
+                            currentFile["note"] = "Multi extrusion"
 
             # how long print took
             if "time" in payload:
@@ -106,7 +99,7 @@ def eventHandler(self, event, payload):
                     success = last["success"]
 
             if not success:
-                success = False if event == Events.PRINT_FAILED else True
+                success = False if event == Events.PRINT_FAILED or event == Events.PRINT_CANCELLED else True
 
             timestamp = int(time.time())
 
