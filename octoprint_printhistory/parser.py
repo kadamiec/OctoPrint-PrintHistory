@@ -1,10 +1,9 @@
 # coding=utf-8
 import re
 import os
-import json
+import io
 import logging
 import unittest
-import StringIO
 import ConfigParser
 
 VERSION_REGEX = re.compile(r"(\d+)?\.(\d+)?\.?(\*|\d+)")
@@ -56,10 +55,8 @@ class CuraParser(BaseParser):
         for _ in range(10):
             line = gcode_file.readline()
             if re.search(r"Cura_SteamEngine", line):
-                version = VERSION_REGEX.search(line)
-                if version:
-                    detected = True
-                    self.version = version.group(0)
+                detected = True
+                self.version = VERSION_REGEX.search(line).group(0)
         gcode_file.seek(0)
         return detected
 
@@ -86,16 +83,11 @@ class CuraParser(BaseParser):
             else:
                 break
         [settings.append(x.strip()) for x in reversed(settings_reversed)]
-        settings = "".join(settings)
-        settings = json.loads(settings)
-        # Cura >= 3.1 prints also a section extruder_quality
-        settings = settings["global_quality"].replace("\\\\n", "\n")
+        settings = "".join(settings).replace("\\\\n", "\n")
+        settings = settings.replace('{"global_quality": "', "")
+        settings = settings.replace('"}', "")
         config = ConfigParser.RawConfigParser(allow_no_value=True)
-        try:
-            config.readfp(StringIO.StringIO(settings))
-        except ConfigParser.MissingSectionHeaderError:
-            # TODO add a log message
-            return {}
+        config.readfp(io.BytesIO(settings))
         try:
             for section in ["values", "metadata"]:
                 for option in config.options(section):
